@@ -1,0 +1,10 @@
+script:
+    -   id: play_click_sound
+        mode: restart
+        then: []
+    -   id: play_on_sound
+        mode: restart
+        then: []
+    -   id: play_off_sound
+        mode: restart
+        then: []

@@ -1,0 +1,128 @@
+esphome:
+    name: warmfloor
+    friendly_name: "Теплый пол"
+    area: "Ванная"
+
+esp32:
+    board: esp32-c3-devkitm-1
+    variant: ESP32C3
+    framework:
+        type: esp-idf
+
+# Enable logging
+logger:
+    level: INFO
+
+# Enable Home Assistant API
+api:
+    reboot_timeout: 2min
+    encryption:
+        key: !secret warmfloor_api_encryption_key
+
+ota:
+    -   platform: esphome
+        password: !secret warmfloor_ota_password
+
+packages:
+    bathroom: !include
+        file: common/common-settings.yaml
+
+one_wire:
+    - platform: gpio
+      pin: GPIO21
+
+sensor:
+    - platform: dallas_temp
+      id: temperature1
+      name: temperature1
+      address: 0x503c01d075ebef28
+      update_interval: 61s
+    - platform: dallas_temp
+      id: temperature2
+      name: temperature2
+      address: 0xbb3c01d0751e2f28
+      update_interval: 62s
+
+switch:
+    - platform: gpio
+      pin: GPIO7
+      id: relay2
+      name: "Relay 2"
+      inverted: false
+      restore_mode: ALWAYS_OFF
+
+    - platform: gpio
+      pin: GPIO6
+      id: relay1
+      name: "Relay 1"
+      inverted: false
+      restore_mode: ALWAYS_OFF
+
+output:
+    -   platform: template
+        id: temperature_output1
+        type: float
+        write_action:
+            -   lambda: |-
+                    if (state > 0.5) {
+                        id(relay1).turn_on();
+                    } else {
+                        id(relay1).turn_off();
+                    }
+
+    -   platform: template
+        id: temperature_output2
+        type: float
+        write_action:
+            -   lambda: |-
+                    if (state > 0.5) {
+                        id(relay2).turn_on();
+                    } else {
+                        id(relay2).turn_off();
+                    }
+
+
+climate:
+    - platform: pid
+      id: toilet_floor_pid
+      name: "PID Toilet"
+      sensor: temperature1
+      default_target_temperature: 26°C
+      heat_output: temperature_output1
+      control_parameters:
+          kp: 1
+          ki: 1
+          kd: 1
+          output_averaging_samples: 1
+          derivative_averaging_samples: 1
+      deadband_parameters:
+          threshold_high: 0.2°C
+          threshold_low: -0.2°C
+      visual:
+          min_temperature: 20
+          max_temperature: 30
+          temperature_step:
+              target_temperature: 0.5
+              current_temperature: 0.1
+
+    - platform: pid
+      id: bathroom_floor_pid
+      name: "PID Bathroom"
+      sensor: temperature2
+      default_target_temperature: 26°C
+      heat_output: temperature_output2
+      control_parameters:
+          kp: 1
+          ki: 1
+          kd: 1
+          output_averaging_samples: 1
+          derivative_averaging_samples: 1
+      deadband_parameters:
+          threshold_high: 0.2°C
+          threshold_low: -0.2°C
+      visual:
+          min_temperature: 20
+          max_temperature: 30
+          temperature_step:
+              target_temperature: 0.5
+              current_temperature: 0.1

@@ -1,0 +1,44 @@
+script:
+    -   id: lvgl_${servo_name}_valve
+        parameters:
+            value: int
+        then:
+            -   lambda: |-
+                    auto bar = id(lv_valve_${servo_name});
+                    if (bar) {
+                        lv_bar_set_value(bar, value, LV_ANIM_OFF);
+                    }
+
+number:
+    -   platform: template
+        id: servo_${servo_name}_number
+        icon: "mdi:valve"
+        name: Servo ${name_prefix} Control
+        restore_value: ${restore}
+        min_value: ${min_value}
+        max_value: ${max_value}
+        step: 5
+        optimistic: true
+        set_action:
+            then:
+                -   servo.write:
+                        id: servo_${servo_name}
+                        level: !lambda 'return x / 50 - 1;'
+        on_value:
+            -   lambda: |-
+                    id(lvgl_${servo_name}_valve).execute(x);
+
+servo:
+    -   id: servo_${servo_name}
+        output: servo_${servo_name}_output
+        restore: ${restore}
+        min_level: ${min_level}
+        idle_level: ${idle_level}
+        max_level: ${max_level}
+        transition_length: 3s
+
+output:
+    -   platform: ledc
+        id: servo_${servo_name}_output
+        pin: ${servo_pin}
+        frequency: 50Hz

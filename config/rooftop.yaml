@@ -1,0 +1,72 @@
+esphome:
+  name: rooftop
+  friendly_name: "Крыша"
+  area: "Крыша"
+
+esp32:
+  board: esp32-c3-devkitm-1
+  variant: ESP32C3
+  framework:
+    type: esp-idf
+
+# Enable Home Assistant API
+api:
+  reboot_timeout: 2min
+  encryption:
+    key: !secret rooftop_api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret rooftop_ota_password
+
+packages:
+    bathroom: !include
+        file: common/common-settings.yaml
+
+output:
+  - platform: gpio
+    pin: GPIO0
+    id: drain_porch
+    inverted: true
+  - platform: gpio
+    pin: GPIO1
+    id: drain_veranda
+    inverted: true
+  - platform: gpio
+    pin: GPIO18
+    id: socket_veranda
+    inverted: true
+  - platform: gpio
+    pin: GPIO19
+    id: fan_veranda
+    inverted: true
+
+switch:
+  - platform: output
+    output: drain_porch
+    name: "Drain heating porch"
+    restore_mode: ALWAYS_OFF
+  - platform: output
+    output: drain_veranda
+    name: "Drain heating veranda"
+    restore_mode: ALWAYS_OFF
+  - platform: output
+    output: socket_veranda
+    name: "Socket Veranda"
+    restore_mode: ALWAYS_OFF
+  - platform: output
+    output: fan_veranda
+    name: "Fan veranda"
+    restore_mode: ALWAYS_OFF
+  - platform: gpio
+    pin: GPIO21 # HIGHT power on!
+    id: light_roof
+    name: "Light roof"
+    inverted: false
+    restore_mode: ALWAYS_OFF
+  - platform: gpio
+    pin: GPIO20
+    id: empty_relay
+    name: "Empty"
+    inverted: false
+    restore_mode: ALWAYS_OFF

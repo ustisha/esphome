@@ -1,0 +1,13 @@
+script:
+    -   id: button_${light_name}_led_auto
+        then:
+            -   lambda: |-
+    -   id: button_${light_name}_led_on
+        then:
+            -   lambda: |-
+    -   id: button_${light_name}_led_off
+        then:
+            -   lambda: |-
+    -   id: button_${light_name}_release_action
+        then:
+            -   lambda: |-

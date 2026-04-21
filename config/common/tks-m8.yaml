@@ -1,0 +1,231 @@
+globals:
+    -   id: ${tks_name}_current
+        type: int
+        restore_value: yes
+        initial_value: "0"
+
+script:
+    -   id: ${tks_name}_stop_scripts
+        then:
+            -   logger.log:
+                    level: VERBOSE
+                    tag: ${tks_name}
+                    format: "Stop scripts"
+            -   script.stop: ${tks_name}_switch_off_script
+            -   script.stop: ${tks_name}_switch_on_script
+            -   script.stop: ${tks_name}_timer
+    -   id: ${tks_name}_switch_on_script
+        parameters:
+            delay_ms: int
+        then:
+            -   logger.log:
+                    level: INFO
+                    tag: ${tks_name}
+                    format: "Switch ON starting %dms delay timer"
+                    args: ['delay_ms']
+            -   delay: 100ms
+            -   switch.turn_off: ${tks_name}_k1
+            -   script.execute:
+                    id: ${tks_name}_timer
+                    step: 1
+            -   delay: !lambda return delay_ms;
+            -   logger.log:
+                    level: VERBOSE
+                    tag: ${tks_name}
+                    format: "K2 timer end - OFF"
+            -   switch.turn_on: ${tks_name}_sw1
+            -   delay: 100ms
+            -   switch.turn_off: ${tks_name}_sw1
+            -   script.stop: ${tks_name}_timer
+
+    -   id: ${tks_name}_switch_off_script
+        parameters:
+            delay_ms: int
+        then:
+            -   logger.log:
+                    level: INFO
+                    tag: ${tks_name}
+                    format: "Switch OFF starting %dms delay timer"
+                    args: ['delay_ms']
+            -   delay: 100ms
+            -   switch.turn_off: ${tks_name}_k2
+            -   script.execute:
+                    id: ${tks_name}_timer
+                    step: -1
+            -   delay: !lambda return delay_ms;
+            -   logger.log:
+                    level: VERBOSE
+                    tag: ${tks_name}
+                    format: "K2 timer end - OFF"
+            -   switch.turn_on: ${tks_name}_sw2
+            -   delay: 100ms
+            -   switch.turn_off: ${tks_name}_sw2
+            -   script.stop: ${tks_name}_timer
+
+    -   id: ${tks_name}_force_close
+        then:
+            -   logger.log:
+                    level: INFO
+                    tag: ${tks_name}
+                    format: "Force close start"
+            -   switch.turn_on: ${tks_name}_k2
+            -   delay: 100ms
+            -   switch.turn_off: ${tks_name}_k2
+            -   delay: ${tks_max_value}s
+            -   logger.log:
+                    level: INFO
+                    tag: ${tks_name}
+                    format: "Force close DONE"
+            -   switch.turn_on: ${tks_name}_sw2
+            -   delay: 100ms
+            -   switch.turn_off: ${tks_name}_sw2
+            -   lambda: |-
+                    id(${tks_name}_current) = 0;
+
+    -   id: ${tks_name}_timer
+        mode: queued
+        parameters:
+            step: int
+        then:
+            -   delay: 1s
+            -   lambda: |-
+                    id(${tks_name}_current) += step;
+                    id(${tks_name}_timer).execute(step);
+            -   logger.log:
+                    tag: ${tks_name}_timer
+                    format: "Current value: %d"
+                    args: ['id(${tks_name}_current)']
+
+    -   id: ${tks_name}_action
+        parameters:
+            x: int
+        then:
+            if:
+                condition:
+                    lambda: |-
+                        return id(${tks_name}_current) < x;
+                then:
+                    -   logger.log:
+                            level: INFO
+                            tag: ${tks_name}
+                            format: "ON action. Current value: %d, set value: %d"
+                            args: ['id(${tks_name}_current)', 'x']
+                    -   switch.turn_on: ${tks_name}_k1
+                    -   script.execute: ${tks_name}_stop_scripts
+                    -   script.execute:
+                            id: ${tks_name}_switch_on_script
+                            delay_ms: !lambda "return (x-id(${tks_name}_current))*1000;"
+                else:
+                    -   logger.log:
+                            level: INFO
+                            tag: ${tks_name}
+                            format: "OFF action. Current value: %d, set value: %d"
+                            args: ['id(${tks_name}_current)', 'x']
+                    -   switch.turn_on: ${tks_name}_k2
+                    -   script.execute: ${tks_name}_stop_scripts
+                    -   script.execute:
+                            id: ${tks_name}_switch_off_script
+                            delay_ms: !lambda "return (id(${tks_name}_current)-x)*1000;"
+
+button:
+    -   platform: template
+        name: "${tks_name} force close"
+        id: ${tks_name}_force_close_button
+        on_press:
+            -   script.execute: ${tks_name}_force_close
+
+number:
+    -   platform: template
+        name: "Action time ${tks_name}"
+        id: ${tks_action_time}
+        unit_of_measurement: cm
+        device_class: "distance"
+        optimistic: true
+        min_value: 0
+        max_value: ${tks_max_value}
+        step: 1
+        on_value:
+            then:
+                if:
+                    condition:
+                        lambda: |-
+                            return id(${tks_name}_current) == (int)x;
+                    then:
+                        -   logger.log:
+                                level: VERBOSE
+                                tag: ${tks_name}
+                                format: "Values equals"
+                    else:
+                        -   logger.log:
+                                level: INFO
+                                tag: ${tks_name}
+                                format: "New value set: %d"
+                                args: ['(int)x']
+                        -   script.execute:
+                                id: ${tks_name}_action
+                                x: !lambda "return (int)x;"
+switch:
+    -   platform: template
+        name: "Template Switch ${tks_name}"
+        optimistic: true
+        turn_on_action:
+            -   logger.log:
+                    level: INFO
+                    tag: ${tks_name}
+                    format: "FULL ON"
+            -   number.to_max: ${tks_name}_action_time
+        turn_off_action:
+            -   logger.log:
+                    level: INFO
+                    tag: ${tks_name}
+                    format: "FULL OFF"
+            -   number.to_min: ${tks_name}_action_time
+
+    # TKS
+    -   platform: gpio
+        pin:
+            number: ${tks_k1}
+            mode:
+                output: true
+                pullup: true
+        id: ${tks_name}_k1
+        name: "${tks_name} K1"
+        internal: true
+        inverted: true
+        restore_mode: ALWAYS_OFF
+
+    -   platform: gpio
+        pin:
+            number: ${tks_k2}
+            mode:
+                output: true
+                pullup: true
+        id: ${tks_name}_k2
+        name: "${tks_name} K2"
+        internal: true
+        inverted: true
+        restore_mode: ALWAYS_OFF
+
+    -   platform: gpio
+        pin:
+            number: ${tks_sw1}
+            mode:
+                output: true
+                pullup: true
+        id: ${tks_name}_sw1
+        internal: true
+        name: "${tks_name} SW1"
+        inverted: true
+        restore_mode: ALWAYS_OFF
+
+    -   platform: gpio
+        pin:
+            number: ${tks_sw2}
+            mode:
+                output: true
+                pullup: true
+        id: ${tks_name}_sw2
+        internal: true
+        name: "${tks_name} SW2"
+        inverted: true
+        restore_mode: ALWAYS_OFF

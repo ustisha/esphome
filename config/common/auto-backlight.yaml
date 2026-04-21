@@ -1,0 +1,86 @@
+switch:
+    -   platform: template
+        icon: "mdi:brightness-auto"
+        name: "Display auto-backlight"
+        id: light_display_auto
+        restore_mode: RESTORE_DEFAULT_ON
+        optimistic: true
+        on_turn_on:
+            -   script.execute: change_light_auto
+
+    -   platform: template
+        icon: "mdi:brightness-auto"
+        name: "Button auto-backlight"
+        id: light_button_auto
+        restore_mode: RESTORE_DEFAULT_ON
+        optimistic: true
+        on_turn_on:
+            -   script.execute: change_light_auto
+
+number:
+    -   platform: template
+        icon: "mdi:brightness-5"
+        name: "Button Brightness"
+        id: button_brightness
+        min_value: 0
+        max_value: 100
+        step: 5
+        restore_value: true
+        initial_value: 100
+        set_action:
+            then:
+                -   logger.log:
+                        format: "Button brightness set to %.0f"
+                        args: ['x']
+                -   script.execute: render_button_0_led
+                -   script.execute: render_button_1_led
+
+sensor:
+    -   platform: bh1750
+        id: display_illuminance
+        name: "LCD Local illuminance"
+        address: 0x23
+        update_interval: 4s
+        device_class: illuminance
+        accuracy_decimals: 0
+        filters:
+            -   median:
+                    window_size: 5
+                    send_every: 1
+                    send_first_at: 1
+        on_value:
+            then:
+                -   script.execute: change_light_auto
+
+script:
+    -   id: change_light_auto
+        then:
+            -   lambda: |-
+                    static auto last_val = 0;
+                    auto x = id(display_illuminance).state;
+                    double x1 = 20.0; double y1 = 60.0;
+                    double x2 = 100.0; double y2 = 100.0;
+                    double f = y1 + (x - x1) * (y2 - y1) / (x2 - x1);
+                    int val = int(round(f));
+                    val = clamp(val, 0, 100);
+                    
+                    if (val == last_val) {
+                        ESP_LOGD("change_light_auto", "Brightness not changed: %d", val);
+                        return;
+                    }
+                    last_val = val;
+
+                    ESP_LOGI("change_light_auto", "Brightness changed: %d", val);
+
+                    if (id(light_display_auto).state) {
+                        auto backlight_brightness_call = id(lcd_backlight_brightness).make_call();
+                        backlight_brightness_call.set_value(val);
+                        backlight_brightness_call.perform();
+                        id(lcd_backlight_brightness).publish_state(val);
+                    }
+                    if (id(light_button_auto).state) {
+                        auto button_brightness_call = id(button_brightness).make_call();
+                        button_brightness_call.set_value(val);
+                        button_brightness_call.perform();
+                        id(button_brightness).publish_state(val);
+                    }

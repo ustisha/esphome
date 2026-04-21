@@ -1,0 +1,277 @@
+time:
+    -   platform: homeassistant
+        id: ha_time
+        timezone: Asia/Krasnoyarsk
+
+output:
+    -   platform: ledc
+        pin: ${ledc_pin}
+        id: backlight
+
+light:
+    -   platform: monochromatic
+        id: ${light_lcd_backlight}
+        output: backlight
+        name: "LCD Backlight"
+        restore_mode: ALWAYS_ON
+        default_transition_length: 1s
+
+number:
+    -   platform: template
+        icon: "mdi:brightness-5"
+        name: "LCD Backlight Brightness"
+        id: lcd_backlight_brightness
+        min_value: 0
+        max_value: 100
+        step: 5
+        restore_value: true
+        initial_value: 100
+        set_action:
+            -   light.turn_on:
+                    id: ${light_lcd_backlight}
+                    brightness: !lambda |-
+                        return x / 100.0f;        
+
+sensor:
+    -   platform: wifi_signal
+        id: wifi_signal_db_display
+        update_interval: 60s
+        entity_category: "diagnostic"
+        on_value:
+            -   lvgl.label.update:
+                    id: lv_dbm
+                    text:
+                        format: "%.0f dBm"
+                        args: ['id(wifi_signal_db).get_state()']
+
+interval:
+    -   interval: 1s
+        then:
+            -   lvgl.label.update:
+                    id: lv_time
+                    text: !lambda |-
+                        auto t = id(ha_time).now();   // или id(sntp_time).now()
+                        if (!t.is_valid()) {
+                            return std::string("--:--");
+                        }
+                        char buf[6];
+                        snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+                        return std::string(buf);
+
+font:
+    -   file: "fonts/materialdesignicons-webfont.ttf"
+        id: materialdesignicons_16
+        size: 16
+        bpp: 4
+        glyphs: [
+            "\U000F05A9", # wifi
+            "\U000F0150", # clock
+            "\U000F050F", # thermometer
+            "\U000F058E"  # water percentage
+        ]
+    -   file: "fonts/materialdesignicons-webfont.ttf"
+        id: materialdesignicons_96
+        size: 96
+        bpp: 4
+        glyphs: [
+            "\U000F1800", # Auto fill
+            "\U000F1801", # Auto
+            "\U000F19E1", # Off !
+            "\U000F0335"  # On
+        ]
+
+lvgl:
+    pages:
+        -   id: canvas_1
+            bg_color: 0x000000
+            widgets:
+                -   label:
+                        id: lv_clock
+                        x: 20
+                        y: 2
+                        width: 20
+                        height: 20
+                        text: "\U000F0150"
+                        text_color: 0x4FC3F7 # light-blue-lighten-2
+                        text_font: materialdesignicons_16
+
+                -   label:
+                        id: lv_time
+                        x: 45
+                        y: 2
+                        width: 70
+                        height: 20
+                        text: "00:00"
+                        text_color: 0x81D4FA # light-blue-lighten-3
+                        text_font: montserrat_20
+
+                -   label:
+                        id: lv_wifi
+                        x: 20
+                        y: 22
+                        width: 20
+                        height: 20
+                        text: "\U000F05A9"
+                        text_color: 0x81C784 # green-lighten-2
+                        text_font: materialdesignicons_16
+
+                -   label:
+                        id: lv_dbm
+                        x: 45
+                        y: 22
+                        width: 90
+                        height: 20
+                        text: "-- dBm"
+                        text_color: 0xA5D6A7 # green-lighten-3
+                        text_font: montserrat_14
+
+                -   label:
+                        id: lv_temp
+                        x: 150
+                        y: 2
+                        width: 20
+                        height: 20
+                        text: "\U000F050F"
+                        text_color: 0xFF8A65 # deep-orange-lighten-2
+                        text_font: materialdesignicons_16
+
+                -   label:
+                        id: lv_${light_name_right}_temp
+                        x: 175
+                        y: 2
+                        width: 70
+                        height: 20
+                        text: "--.-°C"
+                        text_color: 0xFFAB91 # deep-orange-lighten-3
+                        text_font: montserrat_20
+
+                -   label:
+                        id: lv_humidity
+                        x: 150
+                        y: 22
+                        width: 20
+                        height: 20
+                        text: "\U000F058E"
+                        text_color: 0x4FC3F7 # light-blue-lighten-2
+                        text_font: materialdesignicons_16
+
+                -   label:
+                        id: lv_${light_name_right}_humidity
+                        x: 175
+                        y: 22
+                        width: 70
+                        height: 20
+                        text: "--%"
+                        text_color: 0x81D4FA # light-blue-lighten-3
+                        text_font: montserrat_14
+
+                -   label:
+                        id: lv_${light_name_left}_light
+                        x: 13
+                        y: 45
+                        width: 125
+                        height: 150
+                        text: "\U000F1801"
+                        text_color: 0x00B0FF
+                        text_align: CENTER
+                        text_font: materialdesignicons_96
+                        widgets:
+                            -   label:
+                                    id: lv_${light_name_left}_light_timer
+                                    x: 45
+                                    y: 25
+                                    width: 35
+                                    height: 20
+                                    text: ""
+                                    text_color: 0xE3F2FD
+                                    text_align: CENTER
+                                    text_font: montserrat_20
+                            -   label:
+                                    id: lv_${light_name_left}_light_on
+                                    x: 42
+                                    y: 25
+                                    width: 40
+                                    height: 20
+                                    text: ""
+                                    text_color: 0xE3F2FD
+                                    text_align: CENTER
+                                    text_font: montserrat_20
+                            -   label:
+                                    id: lv_${light_name_left}_light_off
+                                    x: 31
+                                    y: 25
+                                    width: 45
+                                    height: 20
+                                    text: ""
+                                    text_color: 0xE3F2FD
+                                    text_align: CENTER
+                                    text_font: montserrat_20
+
+                -   label:
+                        id: lv_${light_name_right}_light
+                        x: 148
+                        y: 45
+                        width: 125
+                        height: 150
+                        text: "\U000F1801"
+                        text_color: 0x00B0FF
+                        text_align: CENTER
+                        text_font: materialdesignicons_96
+                        widgets:
+                            -   label:
+                                    id: lv_${light_name_right}_light_timer
+                                    x: 45
+                                    y: 25
+                                    width: 35
+                                    height: 20
+                                    text: ""
+                                    text_color: 0xE3F2FD
+                                    text_align: CENTER
+                                    text_font: montserrat_20
+                            -   label:
+                                    id: lv_${light_name_right}_light_on
+                                    x: 42
+                                    y: 25
+                                    width: 40
+                                    height: 20
+                                    text: ""
+                                    text_color: 0xE3F2FD
+                                    text_align: CENTER
+                                    text_font: montserrat_20
+                            -   label:
+                                    id: lv_${light_name_right}_light_off
+                                    x: 31
+                                    y: 25
+                                    width: 45
+                                    height: 20
+                                    text: ""
+                                    text_color: 0xE3F2FD
+                                    text_align: CENTER
+                                    text_font: montserrat_20
+
+                -   bar:
+                        id: lv_valve_${light_name_left}
+                        x: 16
+                        y: 195
+                        width: 114
+                        height: 28
+                        value: 50
+                        min_value: 0
+                        max_value: 45
+                        indicator:
+                            bg_color: 0xE4DFDA
+                        bg_color: 0x0288D1 # light-blue-darken-2
+
+                -   bar:
+                        id: lv_valve_${light_name_right}
+                        x: 150
+                        y: 195
+                        width: 114
+                        height: 28
+                        value: 50
+                        min_value: 0
+                        max_value: 45
+                        indicator:
+                            bg_color: 0xE4DFDA
+                        bg_color: 0x0288D1 # light-blue-darken-2
+

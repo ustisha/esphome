@@ -1,0 +1,461 @@
+esphome:
+    name: evan
+    friendly_name: "Электрокотел"
+
+esp32:
+    board: esp32-c3-devkitm-1
+    variant: ESP32C3
+    framework:
+        type: esp-idf
+
+# Enable Home Assistant API
+api:
+    encryption:
+        key: !secret evan_api_encryption_key
+
+ota:
+    -   platform: esphome
+        password: !secret evan_ota_password
+
+packages:
+    bathroom: !include
+        file: common/common-settings.yaml
+
+uart:
+    id: modbus_uart
+    tx_pin: GPIO3
+    rx_pin: GPIO0
+    baud_rate: 57600
+    stop_bits: 1
+    parity: NONE
+    data_bits: 8
+
+modbus:
+    id: modbus_ctrl
+    uart_id: modbus_uart
+    flow_control_pin: GPIO1
+
+modbus_controller:
+    -   id: boiler_modbus
+        address: 0x4D
+        modbus_id: modbus_ctrl
+        setup_priority: -10
+        update_interval: 10s
+        command_throttle: 100ms
+
+sensor:
+    # Режим работы: 0 — Комнатный, 1 — Отопление, 2 - Уличный
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-0: Work Mode"
+        id: boiler_work_mode
+        icon: "mdi:cog"
+        register_type: holding
+        address: 40001
+        value_type: U_WORD
+        accuracy_decimals: 0
+        filters:
+            -   lambda: return (int)x;
+    # Заданная температура теплоносителя от 8 до 85
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-1: Heating Temp Target"
+        id: boiler_heating_temp_target
+        icon: "mdi:thermometer"
+        register_type: holding
+        address: 40002
+        unit_of_measurement: "°C"
+        device_class: temperature
+        value_type: U_WORD
+        accuracy_decimals: 0
+    # Заданная температура воздуха от 0 до 35
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-2: Air Temp Target"
+        id: boiler_air_temp_target
+        icon: "mdi:home-thermometer"
+        register_type: holding
+        address: 40003
+        unit_of_measurement: "°C"
+        device_class: temperature
+        value_type: U_WORD
+        accuracy_decimals: 0
+    # Максимальное количество ступеней мощности (ограничение мощности)
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-3: Max Heater"
+        id: boiler_max_heater
+        icon: "mdi:lightning-bolt"
+        register_type: holding
+        address: 40004
+        value_type: U_WORD
+        accuracy_decimals: 0
+        filters:
+            -   lambda: return (int)x;
+    # Количество ступеней мощности в котле: 3, 6.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-13: Heater Count"
+        id: boiler_heater_count
+        icon: "mdi:counter"
+        register_type: holding
+        address: 40014
+        accuracy_decimals: 0
+        value_type: U_WORD
+        filters:
+            -   lambda: return (int)x;
+    # Время выбега  насоса в минутах (1 — 60 мин.) . 0 — постоянная работа.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-15: Pump time"
+        id: boiler_pump_time
+        icon: "mdi:pump"
+        register_type: holding
+        address: 40016
+        accuracy_decimals: 0
+        value_type: U_WORD
+        filters:
+            -   lambda: return (int)x;
+    # Версия ПО xx.yy.zzz
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-16: Firmware version"
+        id: boiler_firmware_version
+        icon: "mdi:chip"
+        register_type: holding
+        address: 40017
+
+    # --- Регистры чтения (0x04 / read) ---
+    # Смещение 0: Измеренная температура теплоносителя
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-0: Heating Temp"
+        id: boiler_heating_temp
+        icon: "mdi:thermometer"
+        register_type: read
+        address: 30001
+        value_type: S_WORD
+        unit_of_measurement: "°C"
+        device_class: temperature
+        accuracy_decimals: 0
+    # Смещение 1: Измеренная температура воздуха в помещении
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-1: Indoor Air Temp"
+        id: boiler_indoor_temp
+        icon: "mdi:home-thermometer"
+        register_type: read
+        address: 30002
+        value_type: S_WORD
+        unit_of_measurement: "°C"
+        device_class: temperature
+        accuracy_decimals: 0
+    # Смещение 2: Измеренная температура воздуха на улице
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-2: Outdoor Air Temp"
+        id: boiler_outdoor_temp
+        icon: "mdi:thermometer-low"
+        register_type: read
+        address: 30003
+        value_type: S_WORD
+        unit_of_measurement: "°C"
+        device_class: temperature
+        accuracy_decimals: 0
+    # Смещение 3: Количество включённых ступеней мощности
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-3: Active Heater Steps"
+        id: boiler_active_heater_steps
+        icon: "mdi:lightning-bolt"
+        register_type: read
+        address: 30004
+        value_type: U_WORD
+        accuracy_decimals: 0
+        filters:
+            -   lambda: return (int)x;
+    # Смещение 4: Измеренная температура ГВС
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-4: DHW Temp"
+        id: boiler_dhw_temp
+        icon: "mdi:water-thermometer"
+        register_type: read
+        address: 30005
+        value_type: S_WORD
+        unit_of_measurement: "°C"
+        device_class: temperature
+        accuracy_decimals: 0
+    # Смещение 6: Флаги ошибок
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-6: Error Flags"
+        id: boiler_error_flags
+        icon: "mdi:alert-circle"
+        register_type: read
+        address: 30007
+        value_type: U_WORD
+        accuracy_decimals: 0
+        filters:
+            -   lambda: return (int)x;
+    # Смещение 7: Температура воздуха — датчик 1
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-7: Air Temp Sensor 1"
+        id: boiler_air_temp_sensor_1
+        icon: "mdi:thermometer-probe"
+        register_type: read
+        address: 30008
+        value_type: S_WORD
+        unit_of_measurement: "°C"
+        device_class: temperature
+        accuracy_decimals: 0
+        filters:
+            -   lambda: |- 
+                    return x == 127 ? NAN : x;
+    # Смещение 8: Температура воздуха — датчик 2
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-8: Air Temp Sensor 2"
+        id: boiler_air_temp_sensor_2
+        icon: "mdi:thermometer-probe"
+        register_type: read
+        address: 30009
+        value_type: S_WORD
+        unit_of_measurement: "°C"
+        device_class: temperature
+        accuracy_decimals: 0
+        filters:
+            -   lambda: |- 
+                    return x == 127 ? NAN : x;
+    # Смещение 9-10: Температура воздуха — датчик 3
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-9: Air Temp Sensor 3"
+        id: boiler_air_temp_sensor_3
+        icon: "mdi:thermometer-probe"
+        register_type: read
+        address: 30010
+        value_type: S_WORD
+        unit_of_measurement: "°C"
+        device_class: temperature
+        accuracy_decimals: 0
+        filters:
+            -   lambda: |-     
+                    return x == 127 ? NAN : x;
+    # Смещение 10: Режим внешнего управления
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-10: External Control Mode"
+        id: boiler_ext_control_mode
+        icon: "mdi:remote"
+        register_type: read
+        address: 30011
+        value_type: U_WORD
+        accuracy_decimals: 0
+        filters:
+            -   lambda: return (int)x;
+
+binary_sensor:
+    # Заданное состояние реле: 0- выкл.; 1-вкл.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-11: Relay State"
+        id: relay_state
+        icon: "mdi:electric-switch"
+        register_type: holding
+        address: 40012
+
+    # Состояние ГВС 1 — включено, 0 — выключено.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "4-6: DHW State"
+        id: boiler_dhw_state
+        icon: "mdi:water-boiler"
+        register_type: holding
+        address: 40007
+
+    # Смещение 5: Состояние клапана ГВС: 1 — ГВС, 0 — Отопление
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-5: DHW Valve"
+        id: boiler_dhw_valve
+        icon: "mdi:valve"
+        register_type: read
+        address: 30006
+    # Смещение 11: Состояние внешнего термостата: 1 — замкнут, 0 — разомкнут
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-11: External Thermostat"
+        id: boiler_ext_thermostat
+        icon: "mdi:thermostat"
+        register_type: read
+        address: 30012
+    # Смещение 12: Состояние термостата ГВС: 1 — замкнут, 0 — разомкнут
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-12: DHW Thermostat"
+        id: boiler_dhw_thermostat
+        icon: "mdi:water-boiler"
+        register_type: read
+        address: 30013
+    # Смещение 13: Состояние шины OpenTherm: 1 — мастер подключён, 0 — нет
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "3-13: OpenTherm Bus"
+        id: boiler_opentherm_bus
+        icon: "mdi:transit-connection-variant"
+        register_type: read
+        address: 30014
+
+number:
+    # Режим работы: 0 — Комнатный, 1 — Отопление, 2 - Уличный
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-0: Set Work Mode"
+        id: set_work_mode_1
+        icon: "mdi:cog"
+        register_type: holding
+        address: 40001
+        value_type: U_WORD
+        min_value: 0
+        max_value: 2
+        step: 1
+    # Заданная температура теплоносителя от 8 до 85
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-1: Set Heating Temp"
+        id: set_temp_heat
+        icon: "mdi:thermometer"
+        register_type: holding
+        address: 40002
+        value_type: U_WORD
+        min_value: 8
+        max_value: 85
+        step: 1
+        device_class: temperature
+        unit_of_measurement: "°C"
+    # Заданная температура воздуха от 5 до 35
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-2: Set Air Heating Temp"
+        id: set_temp_air
+        icon: "mdi:home-thermometer"
+        register_type: holding
+        address: 40003
+        value_type: U_WORD
+        min_value: 5
+        max_value: 35
+        step: 1
+        device_class: temperature
+        unit_of_measurement: "°C"
+    # Максимальное количество ступеней мощности (ограничение мощности)
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-3: Set Max Heater"
+        id: set_power_limit
+        icon: "mdi:lightning-bolt"
+        register_type: holding
+        address: 40004
+        value_type: U_WORD
+        min_value: 1
+        max_value: 3
+        step: 1
+    # Максимальная температура теплоносителя
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-4: Set Max Heating Temp"
+        id: set_max_temp_heat
+        icon: "mdi:thermometer-high"
+        register_type: holding
+        address: 40005
+        value_type: U_WORD
+        min_value: 10
+        max_value: 85
+        step: 1
+        device_class: temperature
+        unit_of_measurement: "°C"
+    # Заданная температура ГВС от 40 до 75
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-5: Set DHW Temp"
+        id: set_temp_dhw
+        icon: "mdi:water-thermometer"
+        register_type: holding
+        address: 40006
+        value_type: U_WORD
+        min_value: 40
+        max_value: 75
+        step: 1
+        device_class: temperature
+        unit_of_measurement: "°C"
+    # Роль первого датчика температуры воздуха: 0 -комн.; 1 -уличный; 2 -не задан.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-7: 1 Temp sensor role"
+        id: set_1_temp_sensor_role
+        icon: "mdi:thermometer-probe"
+        register_type: holding
+        address: 40008
+        value_type: U_WORD
+        min_value: 0
+        max_value: 2
+        step: 1
+    # Роль второго датчика температуры воздуха: 0 -комн.; 1 -уличный; 2 -не задан.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-8: 2 Temp sensor role"
+        id: set_2_temp_sensor_role
+        icon: "mdi:thermometer-probe"
+        register_type: holding
+        address: 40009
+        value_type: U_WORD
+        min_value: 0
+        max_value: 2
+        step: 1
+    # Роль третьего датчика температуры воздуха: 0 -комн.; 1 -уличный; 2 -не задан.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-9: 3 Temp sensor role"
+        id: set_3_temp_sensor_role
+        icon: "mdi:thermometer-probe"
+        register_type: holding
+        address: 40010
+        value_type: U_WORD
+        min_value: 0
+        max_value: 2
+        step: 1
+    # Номер температурной кривой для уличного режима: 0 — кривая номер 22 ... 9 — кривая номер 60;
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-14: Temp curve number"
+        id: set_temp_curve_number
+        icon: "mdi:chart-bell-curve"
+        register_type: holding
+        address: 40015
+        value_type: U_WORD
+        min_value: 0
+        max_value: 9
+        step: 1
+    # Время выбега  насоса в минутах (1 — 60 мин.) . 0 — постоянная работа.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-15: Pump time"
+        id: set_pump_time
+        icon: "mdi:pump"
+        register_type: holding
+        address: 40016
+        value_type: U_WORD
+        min_value: 0
+        max_value: 120
+        step: 5
+
+switch:
+    # Состояние ГВС 1 — включено, 0 — выключено.
+    -   platform: modbus_controller
+        modbus_controller_id: boiler_modbus
+        name: "6-6: DHW enable"
+        id: set_dhw_enable
+        icon: "mdi:water-boiler"
+        register_type: holding
+        address: 40007

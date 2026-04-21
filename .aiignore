@@ -1,0 +1,8 @@
+# An .aiignore file follows the same syntax as a .gitignore file.
+# .gitignore documentation: https://git-scm.com/docs/gitignore
+
+# you can ignore files
+/config/.esphome/
+/config/secrets.yaml
+/config/esp32c3supermini.yaml
+/config/esp32s3.yaml

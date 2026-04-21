@@ -1,0 +1,264 @@
+globals:
+    -   id: motion_${light_name}_timeout
+        type: int
+        restore_value: no
+        initial_value: "0"
+    -   id: light_${light_name}_processed
+        type: bool
+        restore_value: no
+        initial_value: "false"
+
+sensor:
+    -   platform: template
+        icon: "mdi:progress-clock"
+        name: "${name_prefix} timer"
+        id: motion_${light_name}_current_timeout
+        unit_of_measurement: "s"
+        device_class: "duration"
+        accuracy_decimals: 0
+
+binary_sensor:
+    -   platform: gpio
+        pin:
+            number: ${motion_gpio}
+            mode:
+                input: true
+                pullup: ${motion_pullup}
+        device_class: motion
+        name: "${name_prefix} motion"
+        id: motion_${light_name}
+        filters:
+            -   delayed_on: 50ms
+            -   delayed_off: 50ms
+        on_press:
+            -   script.execute: light_${light_name}_trigger_call
+            -   while:
+                    condition:
+                        binary_sensor.is_on: motion_${light_name}
+                    then:
+                        -   delay: !lambda "return int(id(light_${light_name}_timeout).state) / 3 * 1000;"
+                        -   if:
+                                condition:
+                                    binary_sensor.is_on: motion_${light_name}
+                                then:
+                                    -   script.execute: light_${light_name}_trigger_call
+button:
+    -   platform: template
+        icon: "mdi:gesture-tap"
+        name: "${name_prefix} button"
+        id: trigger_button_${light_name}
+        on_press:
+            -   script.execute: light_${light_name}_trigger_call
+
+switch:
+    -   platform: template
+        icon: "mdi:lightbulb-auto"
+        name: "${name_prefix} auto-light"
+        id: light_${light_name}_auto
+        restore_mode: RESTORE_DEFAULT_ON
+        optimistic: true
+        on_turn_on:
+            -   script.execute: motion_${light_name}_auto_on
+        on_turn_off:
+            -   script.execute: motion_${light_name}_auto_off
+
+light:
+    -   platform: binary
+        icon: "mdi:lightbulb"
+        name: "${name_prefix} light"
+        id: light_${light_name}
+        output: relay_${light_name}
+        restore_mode: ALWAYS_OFF
+        on_turn_off:
+            -   script.execute: motion_${light_name}_light_off
+        on_turn_on:
+            -   script.execute: motion_${light_name}_light_on
+
+output:
+    -   platform: gpio
+        pin: ${relay_gpio}
+        id: relay_${light_name}
+        inverted: ${relay_inverted}
+
+number:
+    -   platform: template
+        icon: "mdi:timer-outline"
+        name: "${name_prefix} timeout"
+        id: light_${light_name}_timeout
+        optimistic: true
+        min_value: 10
+        max_value: ${timeout_max_value}
+        step: 10
+        unit_of_measurement: s
+        device_class: "duration"
+        restore_value: true
+    -   platform: template
+        icon: "mdi:timer-settings-outline"
+        name: "${name_prefix} max on"
+        id: light_${light_name}_max_on
+        optimistic: true
+        min_value: 10
+        max_value: ${timeout_max_value}
+        step: 10
+        unit_of_measurement: s
+        device_class: "duration"
+        restore_value: true
+
+script:
+    -   id: light_${light_name}_trigger_call
+        then:
+            if:
+                condition:
+                    not:
+                        -   script.is_running: motion_${light_name}_timer_tick
+                then:
+                    -   script.execute: motion_${light_name}_timer_start
+                else:
+                    -   script.execute: motion_${light_name}_timer_continue
+
+    -   id: motion_${light_name}_auto_on
+        mode: single
+        then:
+            -   lambda: |-
+                    if (id(light_${light_name}_processed)) {
+                      ESP_LOGI("motion_${light_name}_auto_on", "In process, return");
+                      return;
+                    }
+                    ESP_LOGI("motion_${light_name}_auto_on", "Auto ${light_name} ON");
+                    id(light_${light_name}_processed) = true;
+                    id(motion_${light_name}_timer_tick).stop();
+                    id(motion_${light_name}_timeout) = 0;
+                    id(light_${light_name}).turn_off().perform();
+                    id(motion_${light_name}_current_timeout).publish_state(0);
+                    id(light_${light_name}_processed) = false;
+            -   script.execute: button_${light_name}_release_action
+            -   script.execute: lvgl_${light_name}_release
+
+    -   id: motion_${light_name}_auto_off
+        mode: single
+        then:
+            -   lambda: |-
+                    if (id(light_${light_name}_processed)) {
+                      ESP_LOGI("motion_${light_name}_auto_off", "In process, return");
+                      return;
+                    }
+                    ESP_LOGI("motion_${light_name}_auto_off", "Auto ${light_name} OFF");
+                    id(light_${light_name}_processed) = true;
+                    ESP_LOGI("motion_${light_name}_auto_off", "Set half of remaining timeout");
+                    id(motion_${light_name}_timeout) = round(int(id(motion_${light_name}_timeout)) / 2);
+                    id(light_${light_name}_processed) = false;
+            -   if:
+                    condition:
+                        light.is_on: light_${light_name}
+                    then:
+                        -   script.execute: button_${light_name}_led_on
+                        -   script.execute: lvgl_${light_name}_on
+                    else:
+                        -   script.execute: button_${light_name}_led_off
+                        -   script.execute: lvgl_${light_name}_off
+
+    -   id: motion_${light_name}_light_off
+        mode: single
+        then:
+            -   lambda: |-
+                    if (id(light_${light_name}_processed)) {
+                      ESP_LOGI("motion_${light_name}_light_off", "In process, return");
+                      return;
+                    }
+                    ESP_LOGI("motion_${light_name}_light_off", "Light ${light_name} OFF");
+                    id(light_${light_name}_processed) = true;
+                    id(motion_${light_name}_timer_tick).stop();
+                    id(motion_${light_name}_timeout) = 0;
+                    id(motion_${light_name}_current_timeout).publish_state(0);
+                    id(light_${light_name}_auto).publish_state(false);
+                    id(light_${light_name}_processed) = false;
+            -   if:
+                    condition:
+                        switch.is_on: light_${light_name}_auto
+                    then:
+                        -   script.execute: button_${light_name}_release_action
+                        -   script.execute: lvgl_${light_name}_release
+                    else:
+                        -   script.execute: button_${light_name}_led_off
+                        -   script.execute: lvgl_${light_name}_off
+
+    -   id: motion_${light_name}_light_on
+        mode: single
+        then:
+            -   lambda: |-
+                    if (id(light_${light_name}_processed)) {
+                      ESP_LOGI("motion_${light_name}_light_on", "In process, return");
+                      return;
+                    }
+                    ESP_LOGI("motion_${light_name}_light_on", "LIght ${light_name} ON");
+                    id(light_${light_name}_processed) = true;
+                    id(motion_${light_name}_timeout) = 0;
+                    id(motion_${light_name}_timer_tick).stop();
+                    id(light_${light_name}_auto).publish_state(false);
+                    id(light_${light_name}_processed) = false;
+            -   if:
+                    condition:
+                        switch.is_off: light_${light_name}_auto
+                    then:
+                        -   script.execute: button_${light_name}_led_on
+                        -   script.execute: lvgl_${light_name}_on
+
+    -   id: motion_${light_name}_timer_start
+        mode: single
+        then:
+            -   lambda: |-
+                    if (!id(light_${light_name}_auto).state) {
+                      ESP_LOGI("motion_${light_name}_timer_start", "Auto mode OFF, return");
+                      return;
+                    }
+                    if (id(motion_${light_name}_timeout) == 0) {
+                      ESP_LOGI("motion_${light_name}_timer_start", "Turn on");
+                      id(light_${light_name}_processed) = true;
+                      id(light_${light_name}).turn_on().perform();
+                      id(motion_${light_name}_timeout) = int(id(light_${light_name}_timeout).state);
+                      id(motion_${light_name}_current_timeout).publish_state(id(motion_${light_name}_timeout));
+                      id(motion_${light_name}_timer_tick).execute();
+                      id(light_${light_name}_processed) = false;
+                      return;
+                    }
+    -   id: motion_${light_name}_timer_continue
+        mode: single
+        then:
+            -   lambda: |-
+                    if (!id(light_${light_name}_auto).state) {
+                      ESP_LOGI("motion_${light_name}_timer_continue", "Auto mode OFF, return");
+                      return;
+                    }
+                    if (id(motion_${light_name}_timeout) != 0) {
+                      ESP_LOGI("motion_${light_name}_timer_continue", "Still moving, add a half of timeout");
+                      auto calc_timeout = int(round(int(id(light_${light_name}_timeout).state) / 2)) + id(motion_${light_name}_timeout);
+                      if (calc_timeout > int(id(light_${light_name}_max_on).state)) {
+                        id(motion_${light_name}_timeout) = int(id(light_${light_name}_max_on).state);
+                      } else {
+                        id(motion_${light_name}_timeout) = calc_timeout;
+                      }
+                      id(motion_${light_name}_current_timeout).publish_state(id(motion_${light_name}_timeout));
+                      return;
+                    }
+    -   id: motion_${light_name}_timer_tick
+        mode: queued
+        then:
+            -   delay: 1s
+            -   lambda: |-
+                    if (id(motion_${light_name}_timeout) > 0) {
+                      ESP_LOGI("motion_${light_name}_timer_tick", "Timeout active: %d", id(motion_${light_name}_timeout));
+                      id(motion_${light_name}_current_timeout).publish_state(id(motion_${light_name}_timeout));
+                      id(motion_${light_name}_timer_tick).execute();
+                      id(lvgl_${light_name}_timeout).execute();
+                      id(motion_${light_name}_timeout) -= 1;
+                      return;
+                    } else {
+                      ESP_LOGI("motion_${light_name}_timer_tick", "Turn off, reset to 0");
+                      id(light_${light_name}_processed) = true;
+                      id(motion_${light_name}_timer_tick).stop();
+                      id(light_${light_name}).turn_off().perform();
+                      id(motion_${light_name}_timeout) = 0;
+                      id(motion_${light_name}_current_timeout).publish_state(0);
+                      id(light_${light_name}_processed) = false;
+                      id(lvgl_${light_name}_auto).execute();
+                    }

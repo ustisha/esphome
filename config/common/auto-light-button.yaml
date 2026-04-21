@@ -1,0 +1,123 @@
+globals:
+    -   id: button_led_${num_led}_red
+        type: float
+        restore_value: no
+        initial_value: "0.0"
+    -   id: button_led_${num_led}_green
+        type: float
+        restore_value: no
+        initial_value: "0.4"
+    -   id: button_led_${num_led}_blue
+        type: float
+        restore_value: no
+        initial_value: "1.0"
+
+binary_sensor:
+    -   platform: esp32_touch
+        icon: "mdi:gesture-tap"
+        name: "${name_prefix} touch"
+        pin: ${touch_gpio}
+        threshold: ${threshold}
+        on_multi_click:
+            -   timing:
+                    - ON for at least 60ms
+                then:
+                    -   script.execute: button_${light_name}_led_auto
+                    -   light.turn_off: light_${light_name}
+                    -   switch.turn_on: light_${light_name}_auto
+                    -   script.execute: play_click_sound
+
+            -   timing:
+                    - ON for at least 2s
+                then:
+                    -   script.execute: button_${light_name}_led_on
+                    -   switch.turn_off: light_${light_name}_auto
+                    -   light.turn_on: light_${light_name}
+                    -   script.execute: play_on_sound
+
+            -   timing:
+                    - ON for at least 4s
+                then:
+                    -   script.execute: button_${light_name}_led_off
+                    -   switch.turn_off: light_${light_name}_auto
+                    -   light.turn_off: light_${light_name}
+                    -   script.execute: play_off_sound
+
+        on_release:
+            -   script.execute: button_${light_name}_release_action
+
+script:
+    -   id: button_${light_name}_led_auto
+        mode: single
+        then:
+            -   lambda: |-
+                    ESP_LOGI("button_${light_name}_led_auto", "Set RGB ${light_name} Auto");
+                    
+                    id(button_led_${num_led}_red) = 0.5f;
+                    id(button_led_${num_led}_green) = 0.9f;
+                    id(button_led_${num_led}_blue) = 0.9f;
+            -   script.execute: render_button_${num_led}_led
+
+    -   id: button_${light_name}_led_on
+        mode: single
+        then:
+            -   lambda: |-
+                    ESP_LOGI("button_${light_name}_led_on", "Set RGB ${light_name} ON");
+                    
+                    id(button_led_${num_led}_red) = 1.0f;
+                    id(button_led_${num_led}_green) = 0.6f;
+                    id(button_led_${num_led}_blue) = 0.0f;
+            -   script.execute: render_button_${num_led}_led
+
+    -   id: button_${light_name}_led_off
+        mode: single
+        then:
+            -   lambda: |-
+                    ESP_LOGI("button_${light_name}_led_off", "Set RGB ${light_name} OFF");
+                    
+                    id(button_led_${num_led}_red) = 0.8f;
+                    id(button_led_${num_led}_green) = 0.2f;
+                    id(button_led_${num_led}_blue) = 0.0f;
+            -   script.execute: render_button_${num_led}_led
+
+    -   id: button_${light_name}_release_action
+        mode: single
+        then:
+            -   lambda: |-
+                    ESP_LOGI("button_${light_name}_release_action", "Release ${light_name} triggered");
+            -   if:
+                    condition:
+                        lambda: |-
+                            return id(light_${light_name}_auto).state;
+                    then:
+                        -   lambda: |-
+                                ESP_LOGI("button_${light_name}_release_action", "Back ${light_name} to DEFAULT state");
+                                
+                                id(button_led_${num_led}_red) = 0.0f;
+                                id(button_led_${num_led}_green) = 0.4f;
+                                id(button_led_${num_led}_blue) = 1.0f;
+                        -   script.execute: render_button_${num_led}_led
+
+
+    -   id: render_button_${num_led}_led
+        mode: restart
+        then:
+            -   delay: 0ms
+            -   light.addressable_set:
+                    id: ${button_leds}
+                    range_from: ${num_led}
+                    range_to: ${num_led}
+                    color_brightness: !lambda |-
+                        if (id(button_brightness)) {
+                            float brightness = id(button_brightness).state / 100.0f;
+                            ESP_LOGI("render_button_${num_led}_led", "Set brightness: %.1f", brightness);
+                            return brightness;
+                        }
+                        ESP_LOGI("render_button_${num_led}_led", "Set max brightness");
+                        return 1.0f;
+                    red: !lambda |-
+                        return id(button_led_${num_led}_red);
+                    green: !lambda |-
+                        return id(button_led_${num_led}_green);
+                    blue: !lambda |-
+                        return id(button_led_${num_led}_blue);

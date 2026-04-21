@@ -1,0 +1,27 @@
+script:
+    -   id: lvgl_${light_name}_timeout
+        then:
+            -   lambda: |-
+    -   id: lvgl_${light_name}_auto
+        then:
+            -   lambda: |-
+    -   id: lvgl_${light_name}_click
+        then:
+            -   lambda: |-
+    -   id: lvgl_${light_name}_on
+        then:
+            -   lambda: |-
+    -   id: lvgl_${light_name}_off
+        then:
+            -   lambda: |-
+    -   id: lvgl_${light_name}_release
+        then:
+            -   lambda: |-
+    -   id: lvgl_${light_name}_valve
+        parameters:
+            value: int
+        then:
+            -   lambda: |-
+    -   id: lvgl_${light_name}_dht_update
+        then:
+            -   lambda: |-

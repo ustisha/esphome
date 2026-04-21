@@ -1,0 +1,121 @@
+globals:
+    -   id: current_${light_name}_x
+        type: int
+        restore_value: no
+        initial_value: '0'
+    -   id: base_${light_name}_x
+        type: int
+        restore_value: no
+        initial_value: '0'
+
+script:
+    -   id: lvgl_${light_name}_set_state
+        mode: single
+        parameters:
+            offset_x: int
+            icon_text: string
+            color_value: int
+            timer_value: int
+            show_on: bool
+            show_off: bool
+        then:
+            -   lambda: |-
+                    auto label_state = id(lv_${light_name}_light);
+                    auto label_timer = id(lv_${light_name}_light_timer);
+                    auto label_on = id(lv_${light_name}_light_on);
+                    auto label_off = id(lv_${light_name}_light_off);
+
+                    auto current_label_x = lv_obj_get_x(label_state);
+                    auto current_offset_x = id(current_${light_name}_x);
+                    ESP_LOGI("lvgl_${light_name}_set_state", "Current label: %d, current offset: %d, new offset: %d", current_label_x, current_offset_x, offset_x);
+
+                    if (current_label_x <= 0 && id(base_${light_name}_x) == 0) {
+                        return;
+                    }
+
+                    if (id(base_${light_name}_x) == 0) {
+                        id(base_${light_name}_x) = current_label_x - current_offset_x;
+                        ESP_LOGI("lvgl_${light_name}_set_state", "Saved base_x: %d", id(base_${light_name}_x));
+                    }
+
+                    int new_x = id(base_${light_name}_x) + offset_x;
+                    lv_obj_set_x(label_state, new_x);
+                    id(current_${light_name}_x) = offset_x;
+                    ESP_LOGI("lvgl_${light_name}_set_state", "Set x: %d (base: %d, offset: %d)", new_x, id(base_${light_name}_x), offset_x);
+
+                    lv_label_set_text(label_state, icon_text.c_str());
+                    lv_obj_set_style_text_color(label_state, lv_color_hex(color_value), 0);
+
+                    if (timer_value > 0) {
+                        lv_label_set_text_fmt(label_timer, "%d", timer_value);
+                    } else {
+                        lv_label_set_text(label_timer, "");
+                    }
+
+                    lv_label_set_text(label_on, show_on ? "ON" : "");
+                    lv_label_set_text(label_off, show_off ? "OFF" : "");
+
+    -   id: lvgl_${light_name}_timeout
+        mode: single
+        then:
+            -   script.execute:
+                    id: lvgl_${light_name}_set_state
+                    offset_x: -12
+                    icon_text: "\U000F0335"
+                    color_value: 0xF9A825
+                    timer_value: !lambda "return id(motion_${light_name}_timeout);"
+                    show_on: false
+                    show_off: false
+
+    -   id: lvgl_${light_name}_auto
+        mode: single
+        then:
+            -   script.execute:
+                    id: lvgl_${light_name}_set_state
+                    offset_x: 0
+                    icon_text: "\U000F1801"
+                    color_value: 0x00B0FF
+                    timer_value: 0
+                    show_on: false
+                    show_off: false
+
+    -   id: lvgl_${light_name}_click
+        mode: single
+        then:
+            -   script.execute:
+                    id: lvgl_${light_name}_set_state
+                    offset_x: 0
+                    icon_text: "\U000F1801"
+                    color_value: 0x80D8FF
+                    timer_value: 0
+                    show_on: false
+                    show_off: false
+
+    -   id: lvgl_${light_name}_on
+        mode: single
+        then:
+            -   script.execute:
+                    id: lvgl_${light_name}_set_state
+                    offset_x: -12
+                    icon_text: "\U000F0335"
+                    color_value: 0xF9A825
+                    timer_value: 0
+                    show_on: true
+                    show_off: false
+
+    -   id: lvgl_${light_name}_off
+        mode: single
+        then:
+            -   script.execute:
+                    id: lvgl_${light_name}_set_state
+                    offset_x: -4
+                    icon_text: "\U000F19E1"
+                    color_value: 0xE53935
+                    timer_value: 0
+                    show_on: false
+                    show_off: true
+
+    -   id: lvgl_${light_name}_release
+        mode: single
+        then:
+            -   script.execute: lvgl_${light_name}_auto

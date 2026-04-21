@@ -1,0 +1,213 @@
+esphome:
+  name: boiler
+  friendly_name: "Бойлер"
+  area: "Подвал"
+
+esp8266:
+  board: d1_mini
+  restore_from_flash: true
+
+# Enable logging
+logger:
+    level: INFO
+
+# Enable Home Assistant API
+api:
+  reboot_timeout: 2min
+  encryption:
+    key: !secret boiler_api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret boiler_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+packages:
+    boiler_no_display: !include
+        file: common/no-display.yaml
+        vars:
+            light_name: boiler
+    boiler: !include
+        file: common/auto-light.yaml
+        vars:
+            light_name: boiler
+            name_prefix: "Boiler"
+            motion_gpio: GPIO14
+            motion_pullup: true
+            relay_gpio: GPIO0
+            relay_inverted: true
+            timeout_max_value: 300
+switch:
+    -   platform: gpio
+        pin: GPIO16
+        name: "Pump socket"
+        id: pump_socket
+        inverted: true
+        restore_mode: ALWAYS_OFF
+
+binary_sensor:
+  - platform: gpio
+    id: alert_level
+    name: "Высокий уровень"
+    pin:
+      number: GPIO5
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+
+  - platform: gpio
+    id: low
+    pin:
+      number: GPIO3
+      mode:
+        input: true
+        pullup: true
+    internal: true
+    filters:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    on_state:
+      then:
+        - logger.log: "Water low"
+        - script.execute: update_water_level
+
+  - platform: gpio
+    id: medium
+    pin:
+      number: GPIO12
+      mode:
+        input: true
+        pullup: true
+    internal: true
+    filters:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    on_state:
+      then:
+        - logger.log: "Water medium"
+        - script.execute: update_water_level
+
+  - platform: gpio
+    id: high
+    pin:
+      number: GPIO13
+      mode:
+        input: true
+        pullup: true
+    internal: true
+    filters:
+      - delayed_on: 100ms
+      - delayed_off: 100ms
+    on_state:
+      then:
+        - logger.log: "Water hight"
+        - script.execute: update_water_level
+
+sensor:
+  - platform: adc
+    pin: A0
+    name: "Water pressure"
+    update_interval: 30s
+    unit_of_measurement: "MPa"
+    device_class: "pressure"
+    accuracy_decimals: 2
+    filters:
+      - multiply: 3.3
+      - median:
+          window_size: 10
+          send_every: 3
+      - exponential_moving_average:
+          alpha: 0.1
+          send_every: 1
+      - calibrate_linear:
+          method: least_squares
+          datapoints:
+            - 0.37 -> 0.0
+            - 3.3 -> 2.5
+      - lambda: |-
+         return x < 0 ? 0 : x;            
+
+  - platform: template
+    id: water_level
+    name: "Уровень воды"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: never
+
+#  - platform: pulse_counter
+#    pin:
+#      number: GPIO4
+#      mode:
+#        input: true
+#    unit_of_measurement: 'L'
+#    name: 'Water liters'
+#    internal_filter: 50ms
+#    accuracy_decimals: 0
+#    filters:
+#      - multiply: 1
+
+  - platform: pulse_meter
+    pin:
+      number: GPIO4
+      mode:
+        input: true
+    name: "Water usage"
+    unit_of_measurement: "L/min"
+    device_class: volume_flow_rate
+    state_class: measurement
+    internal_filter: 50ms
+    internal_filter_mode: PULSE
+    accuracy_decimals: 0
+    force_update: true
+    timeout: 60s
+    total:
+      name: "Water total"
+      unit_of_measurement: "m³"
+      id: water_meter_total
+      accuracy_decimals: 3
+      device_class: water
+      state_class: total_increasing
+      filters:
+        - multiply: 0.001
+
+time:
+  - platform: sntp
+    on_time:
+      - seconds: 0
+        minutes: '*'
+        then:
+          - logger.log: "Recal water level"
+          - script.execute: update_water_level
+
+script:
+  - id: update_water_level
+    mode: restart
+    then:
+      - logger.log:
+          format: "Current state low: %d, meduim: %d, hight: %d"
+          args: [ 'id(low).state', 'id(medium).state', 'id(high).state' ]
+      - lambda: |-
+          int level = 100;
+          if (!id(high).state) {
+            level = 100;
+            id(water_level).publish_state(level);
+            return;
+          }
+          if (!id(medium).state) {
+            level = 80;
+            id(water_level).publish_state(level);
+            return;
+          }
+          if (!id(low).state) {
+            level = 50;
+          } else {
+            level = 10;
+          }
+          id(water_level).publish_state(level);
+

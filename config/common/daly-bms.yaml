@@ -1,0 +1,196 @@
+daly_bms:
+    update_interval: ${update_interval}
+
+sensor:
+    -   platform: daly_bms
+        voltage:
+            name: "Battery Voltage"
+            id: battery_voltage
+            icon: "mdi:flash-triangle"
+        current:
+            name: "Battery Current"
+            id: battery_current
+            icon: "mdi:current-dc"
+#        battery_level:
+#            name: "Battery Level"
+#            icon: "mdi:battery"
+        max_cell_voltage:
+            name: "Max Cell Voltage"
+            icon: "mdi:arrow-up-bold"
+        max_cell_voltage_number:
+            name: "Max Cell Voltage Number"
+            icon: "mdi:numeric"
+        min_cell_voltage:
+            name: "Min Cell Voltage"
+            icon: "mdi:arrow-down-bold"
+        min_cell_voltage_number:
+            name: "Min Cell Voltage Number"
+            icon: "mdi:numeric"
+        max_temperature:
+            name: "Max Temperature"
+            icon: "mdi:thermometer-high"
+        max_temperature_probe_number:
+            name: "Max Temperature Probe Number"
+            icon: "mdi:numeric"
+        min_temperature:
+            name: "Min Temperature"
+            icon: "mdi:thermometer-low"
+        min_temperature_probe_number:
+            name: "Min Temperature Probe Number"
+            icon: "mdi:numeric"
+        remaining_capacity:
+            name: "Remaining Capacity"
+            icon: "mdi:battery-clock"
+        cells_number:
+            name: "Cells Number"
+            id: cells_number
+            icon: "mdi:counter"
+        temperature_1:
+            name: "Temperature 1"
+            icon: "mdi:thermometer"
+        cell_1_voltage:
+            name: "Cell 1 Voltage"
+            icon: "mdi:battery-heart-variant"
+        cell_2_voltage:
+            name: "Cell 2 Voltage"
+            icon: "mdi:battery-heart-variant"
+        cell_3_voltage:
+            name: "Cell 3 Voltage"
+            icon: "mdi:battery-heart-variant"
+        cell_4_voltage:
+            name: "Cell 4 Voltage"
+            icon: "mdi:battery-heart-variant"
+
+    -   platform: template
+        name: "Battery Power"
+        id: battery_power
+        icon: "mdi:lightning-bolt"
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        lambda: |-
+            return id(battery_voltage).state * id(battery_current).state;
+
+    -   platform: template
+        name: "Battery Charge Power"
+        id: battery_charge_power
+        icon: "mdi:battery-charging"
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        lambda: |-
+            if (id(battery_current).state > 0)
+              return id(battery_voltage).state * id(battery_current).state;
+            else
+              return 0;
+    -   platform: template
+        name: "Battery Discharge Power"
+        id: battery_discharge_power
+        icon: "mdi:battery-arrow-down"
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        lambda: |-
+            if (id(battery_current).state < 0)
+              return id(battery_voltage).state * -id(battery_current).state;
+            else
+              return 0;            
+    -   platform: integration
+        name: "Battery Charged Energy"
+        sensor: battery_charge_power
+        icon: "mdi:battery-plus-outline"
+        time_unit: h
+        unit_of_measurement: Wh
+        device_class: energy
+        state_class: total_increasing
+        accuracy_decimals: 3
+    -   platform: integration
+        name: "Battery Discharged Energy"
+        sensor: battery_discharge_power
+        icon: "mdi:battery-minus-outline"
+        time_unit: h
+        unit_of_measurement: Wh
+        device_class: energy
+        state_class: total_increasing
+        accuracy_decimals: 3
+
+    -   platform: template
+        name: "Charge Current"
+        id: charge_current
+        icon: "mdi:arrow-down-bold-circle"
+        unit_of_measurement: A
+        lambda: |-
+            if (id(battery_current).state > 0)
+              return id(battery_current).state;
+            return 0;
+    -   platform: template
+        name: "Discharge Current"
+        id: discharge_current
+        icon: "mdi:arrow-up-bold-circle"
+        unit_of_measurement: A
+        lambda: |-
+            if (id(battery_current).state < 0)
+              return -id(battery_current).state;
+            return 0;
+    -   platform: integration
+        name: "Battery Charged Ah"
+        id: battery_charged_ah
+        sensor: charge_current
+        icon: "mdi:battery-charging-high"
+        time_unit: h
+        unit_of_measurement: Ah
+        state_class: total_increasing
+        accuracy_decimals: 3
+    -   platform: integration
+        name: "Battery Discharged Ah"
+        id: battery_discharged_ah
+        sensor: discharge_current
+        icon: "mdi:battery-outline"
+        time_unit: h
+        unit_of_measurement: Ah
+        state_class: total_increasing
+        accuracy_decimals: 3
+
+    -   platform: template
+        name: "Battery Level by Voltage"
+        id: battery_level_by_voltage
+        icon: "mdi:battery-check"
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        accuracy_decimals: 1
+        update_interval: 10s
+        lambda: |-
+            float v = id(battery_voltage).state;
+            if (isnan(v)) return NAN;
+            // LiFePO4 4S: таблица напряжение -> процент
+            float voltages[] = {11.8, 12.2, 12.4, 12.6, 12.7, 12.8, 12.9, 13.0, 13.2, 13.3, 14.5};
+            float percents[] = {0,    10,   20,   30,   40,   50,   60,   96,   97,   98,   100};
+            int n = 11;
+            if (v <= voltages[0]) return 0.0f;
+            if (v >= voltages[n-1]) return 100.0f;
+            for (int i = 0; i < n - 1; i++) {
+                if (v <= voltages[i+1]) {
+                    return percents[i] + (v - voltages[i]) / (voltages[i+1] - voltages[i]) * (percents[i+1] - percents[i]);
+                }
+            }
+            return 0.0f;
+
+text_sensor:
+    -   platform: daly_bms
+        status:
+            name: "BMS Status"
+            id: bms_status
+            icon: "mdi:information-outline"
+
+binary_sensor:
+    -   platform: daly_bms
+        charging_mos_enabled:
+            name: "Charging MOS"
+            id: charging_mos
+            icon: "mdi:electric-switch"
+        discharging_mos_enabled:
+            name: "Discharging MOS"
+            id: discharging_mos
+            icon: "mdi:electric-switch"
+

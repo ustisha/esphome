@@ -1,0 +1,269 @@
+esphome:
+    name: bathroom
+    friendly_name: "Ванная"
+
+esp32:
+    board: esp32-s3-devkitc-1
+    framework:
+        type: esp-idf
+
+# Enable Home Assistant API
+api:
+    encryption:
+        key: !secret bathroom_api_encryption_key
+
+ota:
+    -   platform: esphome
+        password: !secret bathroom_ota_password
+
+packages:
+    common: !include
+        file: common/common-settings.yaml
+
+    bathroom: !include
+        file: common/auto-light.yaml
+        vars:
+            light_name: bathroom
+            name_prefix: "Bathroom"
+            motion_gpio: GPIO4
+            motion_pullup: true
+            relay_gpio: GPIO10
+            relay_inverted: false
+            timeout_max_value: 300
+    bathroom_button: !include
+        file: common/auto-light-button.yaml
+        vars:
+            light_name: bathroom
+            name_prefix: "Bathroom"
+            touch_gpio: GPIO12
+            threshold: 8000
+            button_leds: button_leds
+            num_led: 1
+    bathroom_servo: !include
+        file: common/valve-servo-mg90.yaml
+        vars:
+            servo_name: bathroom
+            name_prefix: "Bathroom"
+            servo_pin: GPIO6
+            restore: false
+            min_value: 0
+            max_value: 45
+            min_level: 2.868%
+            idle_level: 7.5%
+            max_level: 11.5%
+
+    toilet: !include
+        file: common/auto-light.yaml
+        vars:
+            light_name: toilet
+            name_prefix: "Toilet"
+            motion_gpio: GPIO11
+            motion_pullup: true
+            relay_gpio: GPIO17
+            relay_inverted: false
+            timeout_max_value: 300
+    toilet_button: !include
+        file: common/auto-light-button.yaml
+        vars:
+            light_name: toilet
+            name_prefix: "Toilet"
+            touch_gpio: GPIO13
+            threshold: 8000
+            button_leds: button_leds
+            num_led: 0
+    toilet_servo: !include
+        file: common/valve-servo-mg90.yaml
+        vars:
+            servo_name: toilet
+            name_prefix: "Toilet"
+            servo_pin: GPIO7
+            restore: true
+            min_value: 0
+            max_value: 45
+            min_level: 3.098%
+            idle_level: 7.5%
+            max_level: 11.5%
+
+    left: !include
+        file: common/auto-light-display-script.yaml
+        vars:
+            light_name: toilet
+    right: !include
+        file: common/auto-light-display-script.yaml
+        vars:
+            light_name: bathroom
+    right_dht: !include
+        file: common/auto-light-display-dht-script.yaml
+        vars:
+            light_name: bathroom
+            temp_id: bathroom_temp
+            humidity_id: bathroom_humidity
+
+    display: !include
+        file: common/auto-light-display-x2.yaml
+        vars:
+            light_name_right: bathroom
+            light_name_left: toilet
+            light_lcd_backlight: lcd_backlight
+            ledc_pin: GPIO8
+
+    auto_backlight: !include
+        file: common/auto-backlight.yaml
+        vars:
+            light_lcd_backlight: lcd_backlight
+            light_button: button_leds
+
+    buzzer: !include common/buzzer-rtttl.yaml
+
+esp32_touch:
+    id: bathroom_touch
+    setup_mode: false
+    measurement_duration: 1ms
+    sleep_duration: 2ms
+
+light:
+    -   platform: esp32_rmt_led_strip
+        id: button_leds
+        name: "Touch RGB"
+        chipset: WS2811
+        pin: GPIO14
+        num_leds: 2
+        rgb_order: GRB
+        internal: true
+        default_transition_length: 0s
+        restore_mode: RESTORE_AND_ON
+        initial_state:
+            state: ON
+            color_mode: RGB
+            red: 0%
+            green: 40%
+            blue: 100%
+
+spi:
+    clk_pin: GPIO48
+    mosi_pin: GPIO38
+    interface: hardware
+
+display:
+    -   platform: mipi_spi
+        id: display1
+        model: ST7789V
+        dimensions:
+            width: 280
+            height: 240
+            offset_width: 20
+            offset_height: 0
+        cs_pin: GPIO9
+        dc_pin: GPIO18
+        reset_pin: GPIO21
+        draw_rounding: 1
+        rotation: 270
+        color_order: BGR
+        invert_colors: true
+
+sensor:
+    -   platform: dht
+        pin: GPIO3
+        model: AM2302
+        temperature:
+            name: "Bathroom temperature"
+            id: bathroom_temp
+            on_value:
+                then:
+                    -   script.execute: lvgl_bathroom_dht_update
+        humidity:
+            name: "Bathroom humidity"
+            id: bathroom_humidity
+            on_value:
+                then:
+                    -   script.execute: bathroom_pid_run
+                    -   script.execute: lvgl_bathroom_dht_update
+        update_interval: 60s
+
+number:
+    -   platform: template
+        name: "Humidity Target"
+        id: humidity_target
+        min_value: 40
+        max_value: 90
+        step: 5
+        initial_value: 60
+        optimistic: true
+        restore_value: true
+
+switch:
+    -   platform: template
+        icon: "mdi:thermostat-box-auto"
+        name: "Humidity Auto"
+        id: humidity_auto
+        restore_mode: RESTORE_DEFAULT_ON
+        optimistic: true
+        on_turn_on:
+            -   script.execute: bathroom_pid_run
+
+script:
+    -   id: bathroom_pid_run
+        mode: restart
+        then:
+            -   lambda: |-
+                    if (!id(humidity_auto).state) {
+                        ESP_LOGI("bathroom_humidity_pid", "Auto mode OFF");
+                        return;
+                    }
+                    
+                    static float integral = 0;
+                    static float lastError = 0;
+                    static unsigned long lastTime = 0;
+                    
+                    float kp = 0.2;
+                    float ki = 0.001;
+                    float kd = 0.4;
+                    
+                    float current = round(id(bathroom_humidity).state);
+                    float target = id(humidity_target).state;
+                    
+                    if (isnan(current) || isnan(target)) {
+                        ESP_LOGW("bathroom_humidity_pid", "Sensor not ready");
+                        return;
+                    }
+                    
+                    unsigned long now = millis();
+                    if (lastTime == 0) {
+                        lastTime = now;
+                    }
+                    float dt = (now - lastTime) / 1000.0;  // секунды
+                    lastTime = now;
+                    dt = std::clamp(dt, 1.0f, 300.0f);
+    
+                    // вычисляем ошибку
+                    float error = current - target;
+                    integral += error * dt;
+                    float derivative = (error - lastError) / dt;
+                    float output = kp * error + ki * integral + kd * derivative;
+                    ESP_LOGI("bathroom_humidity_pid", "Error: %.1f, dt: %.1f, integral: %.1f, derivative: %.1f, output: %.2f", error, dt, integral, derivative, output);
+                    
+                    output = std::clamp(output, 0.0f, 45.0f);
+                    auto output5 = round(output / 5.0f) * 5.0f;
+                    ESP_LOGI("bathroom_humidity_pid", "Current: %.1f, Target: %.1f,  Output: %.1f", current, target, output);
+                    
+                    auto call = id(servo_bathroom_number).make_call();
+                    call.set_value(int(output5));
+                    call.perform();
+                    
+                    lastError = error;
+
+i2c:
+    sda: GPIO2
+    scl: GPIO1
+    scan: true
+    id: bus_a
+
+output:
+    -   platform: ledc
+        pin: GPIO5
+        id: rtttl_out
+
+rtttl:
+    output: rtttl_out
+    id: buzz_rtttl
+    gain: 60%

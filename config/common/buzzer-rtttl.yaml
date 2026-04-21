@@ -1,0 +1,13 @@
+script:
+    -   id: play_click_sound
+        mode: restart
+        then:
+            -   rtttl.play: "mi_click:d=32,o=7,b=180:e"
+    -   id: play_on_sound
+        mode: restart
+        then:
+            -   rtttl.play: "mi_medium:d=32,o=7,b=180:e,g"
+    -   id: play_off_sound
+        mode: restart
+        then:
+            -   rtttl.play: "mi_long:d=16,o=6,b=140:g,e"
