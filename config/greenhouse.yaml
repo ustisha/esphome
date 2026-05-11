@@ -8,9 +8,6 @@ esp32:
     framework:
         type: esp-idf
 
-# Enable logging
-logger:
-
 # Enable Home Assistant API
 api:
     encryption:
@@ -20,87 +17,10 @@ ota:
     -   platform: esphome
         password: !secret greenhouse_ota_password
 
-wifi:
-    ssid: !secret wifi_ssid
-    password: !secret wifi_password
-
-one_wire:
-    -   platform: gpio
-        pin: GPIO4
-
-sensor: #    -81 dBm
-    -   platform: wifi_signal
-        name: "WiFi Signal dB"
-        id: wifi_signal_db
-        update_interval: 60s
-        entity_category: "diagnostic"
-    -   platform: dht
-        pin: GPIO5
-        model: AM2302
-        temperature:
-            name: "Greenhouse Temperature"
-            id: inner_temp
-        humidity:
-            name: "Greenhouse Humidity"
-        update_interval: 30s
-    -   platform: dallas_temp
-        name: "Ground Temperature"
-        update_interval: 60s
-    -   platform: adc
-        pin: GPIO32
-        attenuation: 12db
-        name: "Moisture 1"
-        update_interval: 20s
-        accuracy_decimals: 0
-        unit_of_measurement: '%'
-        device_class: moisture
-        filters:
-            -   median:
-                    window_size: 8
-                    send_every: 4
-                    send_first_at: 1
-            -   calibrate_linear:
-                    method: least_squares
-                    datapoints:
-                        - 3.2 -> 0.0
-                        - 2 -> 100
-    -   platform: adc
-        pin: GPIO34
-        attenuation: 12db
-        name: "Moisture 2"
-        update_interval: 22s
-        accuracy_decimals: 0
-        unit_of_measurement: '%'
-        device_class: moisture
-        filters:
-            -   median:
-                    window_size: 8
-                    send_every: 4
-                    send_first_at: 1
-            -   calibrate_linear:
-                    method: least_squares
-                    datapoints:
-                        - 3.2 -> 0.0
-                        - 2 -> 100
-    -   platform: adc
-        pin: GPIO35
-        attenuation: 12db
-        name: "Moisture 3"
-        update_interval: 24s
-        accuracy_decimals: 0
-        unit_of_measurement: '%'
-        device_class: moisture
-        filters:
-            -   median:
-                    window_size: 8
-                    send_every: 4
-                    send_first_at: 1
-            -   calibrate_linear:
-                    method: least_squares
-                    datapoints:
-                        - 3.2 -> 0.0
-                        - 2 -> 100
 packages:
+    common: !include
+        file: common/common-settings.yaml
+
     tks1: !include
         file: common/tks-m8.yaml
         vars:
@@ -121,6 +41,14 @@ packages:
             tks_sw1: GPIO22
             tks_sw2: GPIO23
             tks_max_value: 20
+    light1_no_display: !include
+        file: common/no-display.yaml
+        vars:
+            light_name: greenhouse
+    light1_no_button: !include
+        file: common/no-button.yaml
+        vars:
+            light_name: greenhouse
     light1: !include
         file: common/auto-light.yaml
         vars:
@@ -131,6 +59,31 @@ packages:
             relay_gpio: GPIO17
             relay_inverted: true
             timeout_max_value: 300
+
+one_wire:
+    -   platform: gpio
+        pin: GPIO4
+
+sensor:
+    -   platform: dht
+        pin: GPIO5
+        model: AM2302
+        temperature:
+            name: "Greenhouse Temperature"
+            id: inner_temp
+        humidity:
+            name: "Greenhouse Humidity"
+        update_interval: 30s
+    -   platform: dallas_temp
+        name: "Ground Temperature"
+        update_interval: 60s
+#    -   platform: adc
+#        pin: GPIO32
+#    -   platform: adc
+#        pin: GPIO34
+#    -   platform: adc
+#        pin: GPIO35
+
 output:
     -   platform: template
         id: pid_tks_control
@@ -158,11 +111,14 @@ output:
                         } else {
                             id(heater_1).turn_off();
                         }
-                        if (state > 0.5) {
+                        if (state > 0.8) {
                             id(heater_2).turn_on();
                         } else {
                             id(heater_2).turn_off();
                         }
+                    } else {
+                        id(heater_1).turn_off();
+                        id(heater_2).turn_off();
                     }
 
 switch:

@@ -32,7 +32,7 @@ script:
             -   logger.log:
                     level: VERBOSE
                     tag: ${tks_name}
-                    format: "K2 timer end - OFF"
+                    format: "K1 timer end - ON"
             -   switch.turn_on: ${tks_name}_sw1
             -   delay: 100ms
             -   switch.turn_off: ${tks_name}_sw1
@@ -83,18 +83,23 @@ script:
                     id(${tks_name}_current) = 0;
 
     -   id: ${tks_name}_timer
-        mode: queued
+        mode: single
         parameters:
             step: int
         then:
-            -   delay: 1s
-            -   lambda: |-
-                    id(${tks_name}_current) += step;
-                    id(${tks_name}_timer).execute(step);
-            -   logger.log:
-                    tag: ${tks_name}_timer
-                    format: "Current value: %d"
-                    args: ['id(${tks_name}_current)']
+            -   while:
+                    condition:
+                        lambda: |-
+                            if (step > 0) return id(${tks_name}_current) < ${tks_max_value};
+                            return id(${tks_name}_current) > 0;
+                    then:
+                        -   delay: 1s
+                        -   lambda: |-
+                                id(${tks_name}_current) += step;
+                        -   logger.log:
+                                tag: ${tks_name}_timer
+                                format: "Current value: %d"
+                                args: ['id(${tks_name}_current)']
 
     -   id: ${tks_name}_action
         parameters:
@@ -111,7 +116,9 @@ script:
                             format: "ON action. Current value: %d, set value: %d"
                             args: ['id(${tks_name}_current)', 'x']
                     -   switch.turn_on: ${tks_name}_k1
-                    -   script.execute: ${tks_name}_stop_scripts
+                    -   script.stop: ${tks_name}_switch_off_script
+                    -   script.stop: ${tks_name}_switch_on_script
+                    -   script.stop: ${tks_name}_timer
                     -   script.execute:
                             id: ${tks_name}_switch_on_script
                             delay_ms: !lambda "return (x-id(${tks_name}_current))*1000;"
@@ -122,7 +129,9 @@ script:
                             format: "OFF action. Current value: %d, set value: %d"
                             args: ['id(${tks_name}_current)', 'x']
                     -   switch.turn_on: ${tks_name}_k2
-                    -   script.execute: ${tks_name}_stop_scripts
+                    -   script.stop: ${tks_name}_switch_off_script
+                    -   script.stop: ${tks_name}_switch_on_script
+                    -   script.stop: ${tks_name}_timer
                     -   script.execute:
                             id: ${tks_name}_switch_off_script
                             delay_ms: !lambda "return (id(${tks_name}_current)-x)*1000;"
