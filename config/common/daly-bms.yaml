@@ -1,5 +1,78 @@
 daly_bms:
+    id: daly_bms_hub
     update_interval: ${update_interval}
+
+globals:
+    # Оставшийся заряд в А·ч. -1 = счётчик ещё не инициализирован.
+    # Переживает перезагрузку ESP; запись во флеш батчится (preferences, 60s).
+    -   id: soc_ah
+        type: float
+        restore_value: true
+        initial_value: '-1'
+    # millis() предыдущей выборки тока; намеренно не восстанавливается,
+    # чтобы после перезагрузки не проинтегрировать «дыру».
+    -   id: soc_last_ms
+        type: uint32_t
+        restore_value: false
+        initial_value: '0'
+
+script:
+    -   id: soc_update
+        mode: single
+        then:
+            -   lambda: |-
+                    const float cap = ${battery_capacity_ah};
+                    const float v_full = ${battery_full_voltage};
+                    const float i_tail = ${battery_tail_current};
+
+                    float v = id(battery_voltage).state;
+                    float i = id(battery_current).state;
+                    if (isnan(v) || isnan(i)) return;
+
+                    // Первый старт после прошивки: засеваем счётчик по таблице
+                    // напряжения LiFePO4 4S. Дальше таблица не участвует.
+                    if (id(soc_ah) < 0.0f) {
+                        float voltages[] = {11.8, 12.2, 12.4, 12.6, 12.7, 12.8, 12.9, 13.0, 13.2, 13.3, 14.5};
+                        float percents[] = {0,    10,   20,   30,   40,   50,   60,   96,   97,   98,   100};
+                        const int n = 11;
+                        float pct = 100.0f;
+                        if (v <= voltages[0]) {
+                            pct = 0.0f;
+                        } else if (v < voltages[n - 1]) {
+                            for (int k = 0; k < n - 1; k++) {
+                                if (v <= voltages[k + 1]) {
+                                    pct = percents[k] + (v - voltages[k]) / (voltages[k + 1] - voltages[k]) * (percents[k + 1] - percents[k]);
+                                    break;
+                                }
+                            }
+                        }
+                        id(soc_ah) = cap * pct / 100.0f;
+                        ESP_LOGI("soc", "Seed from voltage: %.2f V -> %.1f%%", v, pct);
+                    }
+
+                    // Кулоновский счёт. Ток положительный = заряд.
+                    uint32_t now = millis();
+                    if (id(soc_last_ms) != 0) {
+                        float dt_h = (float) (now - id(soc_last_ms)) / 3600000.0f;
+                        // Пропуск больше получаса = BMS молчал, интегрировать нечего
+                        if (dt_h > 0.0f && dt_h < 0.5f) {
+                            id(soc_ah) += i * dt_h;
+                        }
+                    }
+                    id(soc_last_ms) = now;
+
+                    // Анкер: батарея реально полна, когда держится напряжение
+                    // выше порога И зарядный ток упал до хвостового.
+                    // Это и лечит дрейф — раз в цикл заряда счётчик привязывается к 100%.
+                    if (v >= v_full && i >= 0.0f && i < i_tail) {
+                        if (id(soc_ah) < cap) {
+                            ESP_LOGI("soc", "Full: %.2f V, %.2f A -> anchor %.1f -> %.1f Ah", v, i, id(soc_ah), cap);
+                        }
+                        id(soc_ah) = cap;
+                    }
+
+                    if (id(soc_ah) > cap) id(soc_ah) = cap;
+                    if (id(soc_ah) < 0.0f) id(soc_ah) = 0.0f;
 
 sensor:
     -   platform: daly_bms
@@ -11,6 +84,10 @@ sensor:
             name: "Battery Current"
             id: battery_current
             icon: "mdi:current-dc"
+            # Кулоновский счёт двигаем по факту прихода выборки тока,
+            # а не по таймеру — так dt совпадает с реальным интервалом опроса.
+            on_value:
+                -   script.execute: soc_update
 #        battery_level:
 #            name: "Battery Level"
 #            icon: "mdi:battery"
@@ -151,30 +228,36 @@ sensor:
         state_class: total_increasing
         accuracy_decimals: 3
 
+    # Уровень заряда: кулоновский счёт с привязкой к напряжению.
+    # Собственный SoC от BMS не используем — он уползает вниз даже под зарядным.
     -   platform: template
-        name: "Battery Level by Voltage"
-        id: battery_level_by_voltage
+        name: "Battery Level"
+        id: battery_soc
         icon: "mdi:battery-check"
         unit_of_measurement: "%"
         device_class: battery
         state_class: measurement
-        accuracy_decimals: 1
-        update_interval: 10s
+        accuracy_decimals: 0
+        update_interval: ${update_interval}
         lambda: |-
             float v = id(battery_voltage).state;
-            if (isnan(v)) return NAN;
-            // LiFePO4 4S: таблица напряжение -> процент
-            float voltages[] = {11.8, 12.2, 12.4, 12.6, 12.7, 12.8, 12.9, 13.0, 13.2, 13.3, 14.5};
-            float percents[] = {0,    10,   20,   30,   40,   50,   60,   96,   97,   98,   100};
-            int n = 11;
-            if (v <= voltages[0]) return 0.0f;
-            if (v >= voltages[n-1]) return 100.0f;
-            for (int i = 0; i < n - 1; i++) {
-                if (v <= voltages[i+1]) {
-                    return percents[i] + (v - voltages[i]) / (voltages[i+1] - voltages[i]) * (percents[i+1] - percents[i]);
-                }
-            }
-            return 0.0f;
+            // Выше порога полного заряда всегда показываем 100%
+            if (!isnan(v) && v >= ${battery_full_voltage}) return 100.0f;
+            if (id(soc_ah) < 0.0f) return NAN;
+            return id(soc_ah) / ${battery_capacity_ah} * 100.0f;
+
+    # Сырое состояние счётчика — по нему видно, врёт ли оценка
+    -   platform: template
+        name: "Battery Remaining Ah"
+        id: battery_remaining_ah
+        icon: "mdi:battery-70"
+        unit_of_measurement: Ah
+        state_class: measurement
+        accuracy_decimals: 2
+        update_interval: ${update_interval}
+        lambda: |-
+            if (id(soc_ah) < 0.0f) return NAN;
+            return id(soc_ah);
 
 text_sensor:
     -   platform: daly_bms
@@ -193,4 +276,62 @@ binary_sensor:
             name: "Discharging MOS"
             id: discharging_mos
             icon: "mdi:electric-switch"
+
+# Управление MOSFET-ами: нативной поддержки в компоненте daly_bms нет,
+# команды шлём напрямую в UART (см. пример в документации ESPHome).
+# Состояние берём из binary_sensor'ов выше, поэтому свитчи не optimistic.
+# restore_mode: DISABLED обязателен — иначе на каждой загрузке сработал бы
+# turn_off_action и BMS отрубал бы заряд/разряд.
+# После команды даём BMS 500 мс применить её и внеочередно опрашиваем хаб,
+# чтобы состояние не ждало следующего цикла update_interval.
+switch:
+    -   platform: template
+        name: "Charging MOS Control"
+        id: charging_mos_switch
+        icon: "mdi:battery-charging"
+        restore_mode: DISABLED
+        lambda: |-
+            if (!id(charging_mos).has_state()) return {};
+            return id(charging_mos).state;
+        turn_on_action:
+            -   uart.write: [0xA5, 0x40, 0xDA, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC8]
+            -   logger.log: "Daly: charging MOS on"
+            -   delay: 500ms
+            -   component.update: daly_bms_hub
+        turn_off_action:
+            -   uart.write: [0xA5, 0x40, 0xDA, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC7]
+            -   logger.log: "Daly: charging MOS off"
+            -   delay: 500ms
+            -   component.update: daly_bms_hub
+
+    -   platform: template
+        name: "Discharging MOS Control"
+        id: discharging_mos_switch
+        icon: "mdi:battery-arrow-down"
+        restore_mode: DISABLED
+        lambda: |-
+            if (!id(discharging_mos).has_state()) return {};
+            return id(discharging_mos).state;
+        turn_on_action:
+            -   uart.write: [0xA5, 0x40, 0xD9, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC7]
+            -   logger.log: "Daly: discharging MOS on"
+            -   delay: 500ms
+            -   component.update: daly_bms_hub
+        turn_off_action:
+            -   uart.write: [0xA5, 0x40, 0xD9, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC6]
+            -   logger.log: "Daly: discharging MOS off"
+            -   delay: 500ms
+            -   component.update: daly_bms_hub
+
+# Перезагрузка платы BMS — та же кнопка, что в приложении Smart BMS.
+# Команда 0x00, тело пустое, контрольная сумма 0xA5+0x40+0x00+0x08 = 0xED.
+button:
+    -   platform: template
+        name: "BMS Reset"
+        id: bms_reset_button
+        icon: "mdi:restart-alert"
+        entity_category: config
+        on_press:
+            -   uart.write: [0xA5, 0x40, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xED]
+            -   logger.log: "Daly: BMS reset"
 

@@ -52,3 +52,6 @@ packages:
         file: common/daly-bms.yaml
         vars:
             update_interval: 10s
+            battery_capacity_ah: "100.0"    # паспортная ёмкость банки, А·ч
+            battery_full_voltage: "14.0"    # выше этого всегда показываем 100%
+            battery_tail_current: "2.0"     # хвостовой ток 0.02C — признак реально полного заряда
