@@ -98,6 +98,18 @@ packages:
             light_name: bathroom
             temp_id: bathroom_temp
             humidity_id: bathroom_humidity
+    left_floor: !include
+        file: common/auto-light-display-floor-script.yaml
+        vars:
+            light_name: toilet
+            temp_entity: sensor.warmfloor_temperature1
+            relay_entity: switch.warmfloor_relay_1
+    right_floor: !include
+        file: common/auto-light-display-floor-script.yaml
+        vars:
+            light_name: bathroom
+            temp_entity: sensor.warmfloor_temperature2
+            relay_entity: switch.warmfloor_relay_2
 
     display: !include
         file: common/auto-light-display-x2.yaml

@@ -70,6 +70,13 @@ font:
             "\U000F058E"  # water percentage
         ]
     -   file: "fonts/materialdesignicons-webfont.ttf"
+        id: materialdesignicons_24
+        size: 24
+        bpp: 4
+        glyphs: [
+            "\U000F1AAF"  # heating coil
+        ]
+    -   file: "fonts/materialdesignicons-webfont.ttf"
         id: materialdesignicons_96
         size: 96
         bpp: 4
@@ -248,6 +255,46 @@ lvgl:
                                     text_color: 0xE3F2FD
                                     text_align: CENTER
                                     text_font: montserrat_20
+
+                -   label:
+                        id: lv_${light_name_left}_floor_icon
+                        x: 36
+                        y: 152
+                        width: 24
+                        height: 24
+                        text: "\U000F1AAF"
+                        text_color: 0xFFFFFF
+                        text_font: materialdesignicons_24
+
+                -   label:
+                        id: lv_${light_name_left}_floor_temp
+                        x: 66
+                        y: 153
+                        width: 70
+                        height: 24
+                        text: "--.-°"
+                        text_color: 0xFFFFFF
+                        text_font: montserrat_20
+
+                -   label:
+                        id: lv_${light_name_right}_floor_icon
+                        x: 170
+                        y: 152
+                        width: 24
+                        height: 24
+                        text: "\U000F1AAF"
+                        text_color: 0xFFFFFF
+                        text_font: materialdesignicons_24
+
+                -   label:
+                        id: lv_${light_name_right}_floor_temp
+                        x: 200
+                        y: 153
+                        width: 70
+                        height: 24
+                        text: "--.-°"
+                        text_color: 0xFFFFFF
+                        text_font: montserrat_20
 
                 -   bar:
                         id: lv_valve_${light_name_left}

@@ -22,9 +22,17 @@ binary_sensor:
             -   timing:
                     - ON for at least 60ms
                 then:
+                    # Возврат в авторежим. light.turn_off здесь не зовём: motion_*_light_off считает его
+                    # ручным выключением и на мгновение сбрасывает авторежим (OFF -> ON в истории HA)
+                    -   if:
+                            condition:
+                                switch.is_on: light_${light_name}_auto
+                            then:
+                                -   script.execute: motion_${light_name}_auto_on
+                            else:
+                                -   switch.turn_on: light_${light_name}_auto
+                    # Цвет касания ставим последним: скрипты света и авторежима выше сами перекрашивают кнопку
                     -   script.execute: button_${light_name}_led_auto
-                    -   light.turn_off: light_${light_name}
-                    -   switch.turn_on: light_${light_name}_auto
                     -   script.execute: play_click_sound
 
             -   timing:
@@ -53,9 +61,9 @@ script:
             -   lambda: |-
                     ESP_LOGI("button_${light_name}_led_auto", "Set RGB ${light_name} Auto");
                     
-                    id(button_led_${num_led}_red) = 0.5f;
-                    id(button_led_${num_led}_green) = 0.9f;
-                    id(button_led_${num_led}_blue) = 0.9f;
+                    id(button_led_${num_led}_red) = 0.0f;
+                    id(button_led_${num_led}_green) = 1.0f;
+                    id(button_led_${num_led}_blue) = 0.2f;
             -   script.execute: render_button_${num_led}_led
 
     -   id: button_${light_name}_led_on

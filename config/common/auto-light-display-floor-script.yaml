@@ -1,0 +1,46 @@
+sensor:
+    -   platform: homeassistant
+        id: ${light_name}_floor_temp
+        entity_id: ${temp_entity}
+        on_value:
+            -   script.execute: lvgl_${light_name}_floor_update
+
+binary_sensor:
+    -   platform: homeassistant
+        id: ${light_name}_floor_relay
+        entity_id: ${relay_entity}
+        on_state:
+            -   script.execute: lvgl_${light_name}_floor_update
+
+# Home Assistant отключился — значение устарело, показываем прочерки
+interval:
+    -   interval: 30s
+        then:
+            -   if:
+                    condition:
+                        not:
+                            api.connected:
+                                state_subscription_only: true
+                    then:
+                        -   lambda: |-
+                                if (!std::isnan(id(${light_name}_floor_temp).state)) {
+                                    id(${light_name}_floor_temp).publish_state(NAN);
+                                }
+
+script:
+    -   id: lvgl_${light_name}_floor_update
+        then:
+            -   lvgl.label.update:
+                    id: lv_${light_name}_floor_icon
+                    text_color: !lambda |-
+                        bool heating = id(${light_name}_floor_relay).state && !std::isnan(id(${light_name}_floor_temp).state);
+                        return lv_color_hex(heating ? 0xFF7043 : 0xFFFFFF);
+            -   lvgl.label.update:
+                    id: lv_${light_name}_floor_temp
+                    text:
+                        format: "%.1f°"
+                        args: [ 'id(${light_name}_floor_temp).state' ]
+                        if_nan: "--.-°"
+                    text_color: !lambda |-
+                        bool heating = id(${light_name}_floor_relay).state && !std::isnan(id(${light_name}_floor_temp).state);
+                        return lv_color_hex(heating ? 0xFFAB91 : 0xFFFFFF);
